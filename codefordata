@@ -1,0 +1,77 @@
+var catchment = ee.FeatureCollection('projects/ee-aarzuadhikari770/assets/drive-download-20241208T105348Z-001'); // Replace with your shapefile or geometry
+Map.centerObject(catchment, 10); // Center the map on the catchment area
+Map.addLayer(catchment, {color: 'blue'}, 'Catchment Area');
+
+// Step 2: Define the time periods for the two Sentinel-2 datasets.
+var START1 = ee.Date('2018-01-01');
+var END1 = ee.Date('2018-12-31');
+var START2 = ee.Date('2018-01-01');
+var END2 = ee.Date('2018-12-31');
+
+// Step 3: Filter the Sentinel-2 ImageCollections for the two time periods.
+var s2Col1 = ee.ImageCollection('COPERNICUS/S2_HARMONIZED')
+    .filterDate(START1, END1)
+    .filterBounds(catchment) // Filter by catchment area
+    .sort('system:time_start'); // Sort by time
+
+var s2Col2 = ee.ImageCollection('COPERNICUS/S2_HARMONIZED')
+    .filterDate(START2, END2)
+    .filterBounds(catchment) // Filter by catchment area
+    .sort('system:time_start'); // Sort by time
+
+// Step 4: Get the first image from each collection (you can adjust based on your needs).
+var s2Img1 = s2Col1.first();
+var s2Img2 = s2Col2.first();
+
+// Check if both images exist before continuing
+if (s2Img1 && s2Img2) {
+    // Step 5: Merge the two Sentinel-2 images by adding bands from the second image to the first.
+    var mergedImg = s2Img1.addBands(s2Img2.select(['B2', 'B3', 'B4', 'B8'])); // Adding selected bands (Blue, Green, Red, NIR)
+
+    // Step 6: Clip the merged image to the catchment area to ensure that only the region of interest is shown.
+    var clippedImg = mergedImg.clip(catchment);
+
+    // Step 7: Create a visualization parameter for RGB bands (True-color).
+    var visParams = {
+      min: 0,
+      max: 3000,
+      bands: ['B4', 'B3', 'B2'], // True-color visualization using Red, Green, Blue bands
+    };
+
+    // Step 8: Visualize the merged and clipped Sentinel-2 image.
+    Map.addLayer(clippedImg, visParams, 'Merged Sentinel-2 Image');
+} else {
+    print('Error: One or both Sentinel-2 images do not exist!');
+}
+
+// Step 9: Add Dynamic World LULC data for the catchment area.
+var dw = ee.ImageCollection('GOOGLE/DYNAMICWORLD/V1')
+  .filterBounds(catchment) // Filter by catchment area
+  .filterDate(START1, END2); // Filter the time range
+
+// Step 10: Select the land cover band from Dynamic World (land cover types: 0-8)
+var lulcDw = dw.select('label').mosaic(); // 'label' is the band representing land cover classes
+var lulcClippedDw = lulcDw.clip(catchment); // Clip LULC data to catchment area
+
+// Step 11: Visualization of Dynamic World LULC data.
+var lulcVisDw = {
+  min: 0,
+  max: 8,  // The range of values representing the land cover classes (0-8)
+  palette:['419bdf', '397d49', '88b053', '7a87c6', 'e49635', 'dfc35a', 'c4281b','a59b8f', 'b39fe1'],
+ // Define colors for the LULC classes
+  format: 'png'
+};
+
+// Step 12: Add Dynamic World LULC data as a layer on the map.
+Map.addLayer(lulcClippedDw, lulcVisDw, 'Dynamic World Land Use Land Cover');
+
+// Step 13: Export the LULC data for further analysis.
+Export.image.toDrive({
+  image: lulcClippedDw,
+  description: 'DynamicWorld_LULC_Catchment',
+  folder: 'EarthEngineExports', // Specify a folder in your Google Drive
+  scale: 10, // 10m resolution for Dynamic World data
+  region: catchment.geometry().bounds(),
+  crs: 'EPSG:4326',
+  maxPixels: 1e13
+});
