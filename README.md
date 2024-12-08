@@ -1,0 +1,2 @@
+# lulcdata
+javacode for lulc.
